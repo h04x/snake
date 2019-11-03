@@ -5,6 +5,7 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
 use rand::Rng;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 struct SnakeChain {
@@ -12,6 +13,7 @@ struct SnakeChain {
     y: usize,
 }
 
+#[derive(Debug)]
 enum Direction {
     Left,
     Right,
@@ -20,7 +22,7 @@ enum Direction {
 }
 
 struct Snake {
-    move_direction: Direction,
+    move_direction: Arc<Mutex<Direction>>,
     body: VecDeque<SnakeChain>,
     chain_symbol: console::StyledObject<char>,
 }
@@ -34,6 +36,27 @@ struct SnakeGame {
     playground_symbol: char,
     playground_color: console::Style,
 }
+
+impl Direction {
+    fn turn_left(&mut self) {
+        use Direction::*;
+        *self = match *self {
+            Right => Top,
+            Left => Down,
+            Top => Left,
+            Down => Right,
+        }
+    }    
+    fn turn_right(&mut self) {
+        use Direction::*;
+        *self = match *self {
+            Right => Down,
+            Left => Top,
+            Top => Right,
+            Down => Left,
+        }
+    }    
+} 
 
 impl Snake {
     fn new(left: usize, top: usize, len: usize, move_direction: Direction) -> Snake {
@@ -72,6 +95,7 @@ impl Snake {
                 }
             }
         }
+        let move_direction = Arc::new(Mutex::new(move_direction));
         Snake {
             move_direction,
             body,
@@ -93,7 +117,9 @@ impl Snake {
         print!("{}", hide);
         io::stdout().flush().unwrap();
         let mut head = self.body[0].clone();
-        match self.move_direction {
+        //let mutex_guard = self.move_direction.lock();
+       // println!("{:?}", self.move_direction.lock().unwrap().unwrap());
+        match *self.move_direction.lock().unwrap() {               
             Direction::Left => {
                 head.x = head.x - 1;
             }
@@ -116,7 +142,7 @@ impl Snake {
 
 impl SnakeGame {
     fn new(width: usize, height: usize, speed_msec: u64) -> SnakeGame {
-        let snake = Snake::new(0, height / 2, 3, Direction::Right);
+        let snake = Snake::new(0, height / 2, 7, Direction::Right);
         SnakeGame {
             width,
             height,
@@ -128,18 +154,41 @@ impl SnakeGame {
         }
     }
 
-    fn play(&mut self) {
-        //let term = Term::stdout();
-        //self.term.clear_screen();
-        //self.term.move_cursor_to(i, 10);
-        //self.term.write_line("Hello World!");
-        //self.term.flush();
-        //thread::sleep(Duration::from_millis(100))
+    fn start_key_press_handler(&self) {
+        let rt = self.term.clone();
+        let dr = self.snake.move_direction.clone();
+        thread::spawn(move || loop {
+            match rt.read_key() {
+                Ok(r) => {
+                    match r {
+                        console::Key::ArrowLeft => {
+                            dr.lock().unwrap().turn_left();
+                        },
+                        console::Key::ArrowRight => {
+                            dr.lock().unwrap().turn_right();
+                        },
+                        _ => {}
+                    }
+                },                
+                _ => {}
+            }
+        });
+    }
 
+    fn play(&mut self) {
         self.draw_playground();
         self.snake.draw(&self.term);
+        
+        self.start_key_press_handler();
 
+        
         let hide = self.playground_color.apply_to(self.playground_symbol);
+        loop {
+            self.snake._move(&self.term, &hide);
+            thread::sleep(Duration::from_millis(self.speed_msec));
+        }
+        
+        /*let hide = self.playground_color.apply_to(self.playground_symbol);
         loop {
             self.snake._move(&self.term, &hide);
             if rand::thread_rng().gen_range(0.0, 1.0) < 0.1 {
@@ -161,7 +210,7 @@ impl SnakeGame {
                 }
             }
             thread::sleep(Duration::from_millis(self.speed_msec));
-        }
+        }*/
     }
 
     fn draw_playground(&self) {
