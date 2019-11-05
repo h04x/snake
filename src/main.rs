@@ -10,6 +10,7 @@ use std::time::Duration;
 use crossterm::{
     QueueableCommand, 
     cursor, 
+    screen::RawScreen,
     terminal::{
         Clear,
         ClearType
@@ -274,6 +275,7 @@ impl SnakeGame {
         );
 
         let term = stdout();
+        let _raw = RawScreen::into_raw_mode();
         
         SnakeGame {
             width,
