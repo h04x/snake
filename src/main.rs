@@ -1,34 +1,18 @@
-//extern crate console;
-//use console::{style, Style, Term};
+use crossterm::{
+    cursor,
+    input::{input, InputEvent, KeyEvent},
+    screen::RawScreen,
+    style::{style, Color, ContentStyle, StyledContent},
+    terminal::{Clear, ClearType},
+    QueueableCommand,
+};
 use rand::Rng;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
-use std::io::{self, Write, stdout, Stdout};
+use std::io::{stdout, Stdout, Write};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
-use crossterm::{
-    QueueableCommand, 
-    cursor, 
-    screen::RawScreen,
-    terminal::{
-        Clear,
-        ClearType
-    }, 
-    style::{
-        ContentStyle,
-        StyledContent,
-        style,
-        Color,
-        Attribute,
-        Styler
-    },
-    input::{
-        input,
-        KeyEvent,
-        InputEvent
-    }
-    };
+use std::{process, thread};
 
 enum MoveAct {
     Move,
@@ -127,10 +111,9 @@ impl Cookies {
 
     fn draw(&self, term: &mut Stdout) {
         for cookie in &self.cookies {
-            term.queue(cursor::MoveTo(cookie.x as u16, cookie.y as u16));
+            term.queue(cursor::MoveTo(cookie.x as u16, cookie.y as u16)).unwrap();
             print!("{}", self.cookie_symbol);
-            term.flush();
-
+            term.flush().unwrap();
         }
     }
 
@@ -157,10 +140,9 @@ impl Cookies {
             let s = SnakeChain { x, y };
             if snake.body.contains(&s) == false && self.cookies.contains(&c) == false {
                 self.cookies.insert(c);
-                term.queue(cursor::MoveTo(x as u16, y as u16));
+                term.queue(cursor::MoveTo(x as u16, y as u16)).unwrap();
                 print!("{}", self.cookie_symbol);
-                term.flush();
-
+                term.flush().unwrap();
 
                 break;
             }
@@ -215,19 +197,17 @@ impl Snake {
 
     fn draw(&self, term: &mut Stdout) {
         for snake_chain in &self.body {
-            term.queue(cursor::MoveTo(snake_chain.x as u16, snake_chain.y as u16));
+            term.queue(cursor::MoveTo(snake_chain.x as u16, snake_chain.y as u16)).unwrap();
             print!("{}", self.chain_symbol);
         }
-        term.flush();
-
+        term.flush().unwrap();
     }
 
     fn cut_tail(&mut self, term: &mut Stdout, hide: &StyledContent<char>) {
         let tail = self.body.pop_back().unwrap();
-        term.queue(cursor::MoveTo(tail.x as u16, tail.y as u16));
+        term.queue(cursor::MoveTo(tail.x as u16, tail.y as u16)).unwrap();
         print!("{}", hide);
-        term.flush();
-
+        term.flush().unwrap();
     }
 
     fn add_head(&mut self, term: &mut Stdout) {
@@ -246,9 +226,11 @@ impl Snake {
                 head.y += 1;
             }
         }
-        term.queue(cursor::MoveTo(head.x as u16, head.y as u16));
-        print!("{}", self.chain_symbol);
-        term.flush();
+        if head.x >= 0 && head.y >= 0 {
+            term.queue(cursor::MoveTo(head.x as u16, head.y as u16)).unwrap();
+            print!("{}", self.chain_symbol);
+            term.flush().unwrap();
+        }
         self.body.push_front(head);
     }
 
@@ -275,8 +257,7 @@ impl SnakeGame {
         );
 
         let term = stdout();
-        let _raw = RawScreen::into_raw_mode();
-        
+
         SnakeGame {
             width,
             height,
@@ -291,17 +272,26 @@ impl SnakeGame {
 
     fn start_key_press_handler(&self) {
         let mut rt = input().read_sync();
+        let mut term = stdout();
         let dr = self.snake.move_direction.clone();
-        thread::spawn(move || loop {
-            if let Some(r) = rt.next() {
-                match r {
-                    InputEvent::Keyboard(KeyEvent::Left) => {
-                        dr.lock().unwrap().turn_left();
+        thread::spawn(move || {
+            let _raw = RawScreen::into_raw_mode();
+            loop {
+                if let Some(r) = rt.next() {
+                    match r {
+                        InputEvent::Keyboard(KeyEvent::Left) => {
+                            dr.lock().unwrap().turn_left();
+                        }
+                        InputEvent::Keyboard(KeyEvent::Right) => {
+                            dr.lock().unwrap().turn_right();
+                        }
+                        InputEvent::Keyboard(KeyEvent::Esc) => {
+                            term.queue(cursor::Show).unwrap();
+                            term.flush();
+                            process::exit(0);
+                        }
+                        _ => {}
                     }
-                    InputEvent::Keyboard(KeyEvent::Right) => {
-                        dr.lock().unwrap().turn_right();
-                    }
-                    _ => {}
                 }
             }
         });
@@ -371,20 +361,22 @@ impl SnakeGame {
             }
             thread::sleep(Duration::from_millis(self.speed_msec));
         }
+        self.term.queue(cursor::Show).unwrap();
+        self.term.flush();
     }
 
-    fn draw_playground(&mut self) {        
-        self.term.queue(Clear(ClearType::All));
-        self.term.queue(cursor::MoveTo(0, 0));
-        self.term.queue(cursor::Hide);
-        self.term.flush();
+    fn draw_playground(&mut self) {
+        self.term.queue(Clear(ClearType::All)).unwrap();
+        self.term.queue(cursor::MoveTo(0, 0)).unwrap();
+        self.term.queue(cursor::Hide).unwrap();
+        self.term.flush().unwrap();
         let r = self
             .playground_symbol
             .to_string()
             .repeat(self.width as usize);
         for _ in 0..self.height {
             println!("{}", self.playground_color.apply(&r));
-            self.term.flush();
+            self.term.flush().unwrap();
         }
     }
 }
