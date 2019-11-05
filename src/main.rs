@@ -95,7 +95,7 @@ impl Cookies {
                 let y = r.gen_range(0, height);
                 let c = Cookie { x, y };
                 let s = SnakeChain { x, y };
-                if snake.body.contains(&s) == false && cookies.contains(&c) == false {
+                if !snake.body.contains(&s) && !cookies.contains(&c) {
                     cookies.insert(c);
                     break;
                 }
@@ -111,7 +111,8 @@ impl Cookies {
 
     fn draw(&self, term: &mut Stdout) {
         for cookie in &self.cookies {
-            term.queue(cursor::MoveTo(cookie.x as u16, cookie.y as u16)).unwrap();
+            term.queue(cursor::MoveTo(cookie.x as u16, cookie.y as u16))
+                .unwrap();
             print!("{}", self.cookie_symbol);
             term.flush().unwrap();
         }
@@ -138,7 +139,7 @@ impl Cookies {
             let y = r.gen_range(0, height);
             let c = Cookie { x, y };
             let s = SnakeChain { x, y };
-            if snake.body.contains(&s) == false && self.cookies.contains(&c) == false {
+            if !snake.body.contains(&s) && !self.cookies.contains(&c) {
                 self.cookies.insert(c);
                 term.queue(cursor::MoveTo(x as u16, y as u16)).unwrap();
                 print!("{}", self.cookie_symbol);
@@ -153,39 +154,31 @@ impl Cookies {
 impl Snake {
     fn new(left: isize, top: isize, len: usize, move_direction: Direction) -> Snake {
         let mut body = VecDeque::new();
+        let x_inc;
+        let y_inc;
         match move_direction {
             Direction::Left => {
-                for i in 0..len as isize {
-                    body.push_front(SnakeChain {
-                        x: left - i,
-                        y: top,
-                    });
-                }
+                x_inc = -1;
+                y_inc = 0
             }
             Direction::Right => {
-                for i in 0..len as isize {
-                    body.push_front(SnakeChain {
-                        x: left + i,
-                        y: top,
-                    });
-                }
+                x_inc = 1;
+                y_inc = 0
             }
             Direction::Up => {
-                for i in 0..len as isize {
-                    body.push_front(SnakeChain {
-                        x: left,
-                        y: top - i,
-                    });
-                }
+                x_inc = 0;
+                y_inc = -1
             }
             Direction::Down => {
-                for i in 0..len as isize {
-                    body.push_front(SnakeChain {
-                        x: left - i,
-                        y: top + i,
-                    });
-                }
+                x_inc = 0;
+                y_inc = 1
             }
+        }
+        for i in 0..len as isize {
+            body.push_front(SnakeChain {
+                x: left + i * x_inc,
+                y: top + i * y_inc,
+            });
         }
         let move_direction = Arc::new(Mutex::new(move_direction));
         Snake {
@@ -197,7 +190,8 @@ impl Snake {
 
     fn draw(&self, term: &mut Stdout) {
         for snake_chain in &self.body {
-            term.queue(cursor::MoveTo(snake_chain.x as u16, snake_chain.y as u16)).unwrap();
+            term.queue(cursor::MoveTo(snake_chain.x as u16, snake_chain.y as u16))
+                .unwrap();
             print!("{}", self.chain_symbol);
         }
         term.flush().unwrap();
@@ -205,7 +199,8 @@ impl Snake {
 
     fn cut_tail(&mut self, term: &mut Stdout, hide: &StyledContent<char>) {
         let tail = self.body.pop_back().unwrap();
-        term.queue(cursor::MoveTo(tail.x as u16, tail.y as u16)).unwrap();
+        term.queue(cursor::MoveTo(tail.x as u16, tail.y as u16))
+            .unwrap();
         print!("{}", hide);
         term.flush().unwrap();
     }
@@ -227,7 +222,8 @@ impl Snake {
             }
         }
         if head.x >= 0 && head.y >= 0 {
-            term.queue(cursor::MoveTo(head.x as u16, head.y as u16)).unwrap();
+            term.queue(cursor::MoveTo(head.x as u16, head.y as u16))
+                .unwrap();
             print!("{}", self.chain_symbol);
             term.flush().unwrap();
         }
@@ -287,7 +283,7 @@ impl SnakeGame {
                         }
                         InputEvent::Keyboard(KeyEvent::Esc) => {
                             term.queue(cursor::Show).unwrap();
-                            term.flush();
+                            term.flush().unwrap();
                             process::exit(0);
                         }
                         _ => {}
@@ -323,7 +319,7 @@ impl SnakeGame {
         }
 
         self.snake.body.push_front(head);
-        return ret;
+        ret
     }
 
     fn snake_meet_cookie(&self) -> Option<Cookie> {
@@ -362,7 +358,7 @@ impl SnakeGame {
             thread::sleep(Duration::from_millis(self.speed_msec));
         }
         self.term.queue(cursor::Show).unwrap();
-        self.term.flush();
+        self.term.flush().unwrap();
     }
 
     fn draw_playground(&mut self) {
