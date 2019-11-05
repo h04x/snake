@@ -1,12 +1,33 @@
-extern crate console;
-use console::{style, Style, Term};
+//extern crate console;
+//use console::{style, Style, Term};
 use rand::Rng;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
-use std::io::{self, Write};
+use std::io::{self, Write, stdout, Stdout};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use crossterm::{
+    QueueableCommand, 
+    cursor, 
+    terminal::{
+        Clear,
+        ClearType
+    }, 
+    style::{
+        ContentStyle,
+        StyledContent,
+        style,
+        Color,
+        Attribute,
+        Styler
+    },
+    input::{
+        input,
+        KeyEvent,
+        InputEvent
+    }
+    };
 
 enum MoveAct {
     Move,
@@ -23,14 +44,14 @@ struct SnakeChain {
 enum Direction {
     Left,
     Right,
-    Top,
+    Up,
     Down,
 }
 
 struct Snake {
     move_direction: Arc<Mutex<Direction>>,
     body: VecDeque<SnakeChain>,
-    chain_symbol: console::StyledObject<char>,
+    chain_symbol: StyledContent<char>,
 }
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -41,28 +62,28 @@ struct Cookie {
 
 struct Cookies {
     cookies: BTreeSet<Cookie>,
-    cookie_symbol: console::StyledObject<char>,
-    percent: f32
+    cookie_symbol: StyledContent<char>,
+    percent: f32,
 }
 
 struct SnakeGame {
     width: isize,
     height: isize,
     speed_msec: u64,
-    term: Term,
+    term: Stdout,
     snake: Snake,
     cookies: Cookies,
     playground_symbol: char,
-    playground_color: console::Style,
+    playground_color: ContentStyle,
 }
 
 impl Direction {
     fn turn_left(&mut self) {
         use Direction::*;
         *self = match *self {
-            Right => Top,
+            Right => Up,
             Left => Down,
-            Top => Left,
+            Up => Left,
             Down => Right,
         }
     }
@@ -70,8 +91,8 @@ impl Direction {
         use Direction::*;
         *self = match *self {
             Right => Down,
-            Left => Top,
-            Top => Right,
+            Left => Up,
+            Up => Right,
             Down => Left,
         }
     }
@@ -97,18 +118,18 @@ impl Cookies {
         }
 
         Cookies {
-            cookie_symbol: style('x').red(),
+            cookie_symbol: style('x').with(Color::Red),
             cookies,
-            percent
+            percent,
         }
     }
 
-    fn draw(&self, term: &Term) {
+    fn draw(&self, term: &mut Stdout) {
         for cookie in &self.cookies {
-            term.move_cursor_to(cookie.x as usize, cookie.y as usize)
-                .unwrap();
+            term.queue(cursor::MoveTo(cookie.x as u16, cookie.y as u16));
             print!("{}", self.cookie_symbol);
-            io::stdout().flush().unwrap();
+            term.flush();
+
         }
     }
 
@@ -116,8 +137,9 @@ impl Cookies {
         self.cookies.remove(&cookie);
     }
 
-    fn add(&mut self, term: &Term, width: isize, height: isize, snake: &Snake) {
-        let mut cookies_cnt = ((width + height - snake.body.len() as isize) as f32 * self.percent) as usize;
+    fn add(&mut self, term: &mut Stdout, width: isize, height: isize, snake: &Snake) {
+        let mut cookies_cnt =
+            ((width + height - snake.body.len() as isize) as f32 * self.percent) as usize;
         if cookies_cnt < 1 {
             cookies_cnt = 1;
         }
@@ -125,8 +147,8 @@ impl Cookies {
         if cookies_cnt <= self.cookies.len() {
             return;
         }
-        
-        let mut r = rand::thread_rng();        
+
+        let mut r = rand::thread_rng();
         loop {
             let x = r.gen_range(0, width);
             let y = r.gen_range(0, height);
@@ -134,11 +156,11 @@ impl Cookies {
             let s = SnakeChain { x, y };
             if snake.body.contains(&s) == false && self.cookies.contains(&c) == false {
                 self.cookies.insert(c);
-                term.move_cursor_to(x as usize, y as usize)
-                    .unwrap();
+                term.queue(cursor::MoveTo(x as u16, y as u16));
                 print!("{}", self.cookie_symbol);
-                io::stdout().flush().unwrap();                
-                
+                term.flush();
+
+
                 break;
             }
         }
@@ -165,7 +187,7 @@ impl Snake {
                     });
                 }
             }
-            Direction::Top => {
+            Direction::Up => {
                 for i in 0..len as isize {
                     body.push_front(SnakeChain {
                         x: left,
@@ -186,55 +208,54 @@ impl Snake {
         Snake {
             move_direction,
             body,
-            chain_symbol: style('o').cyan(),
+            chain_symbol: style('o').with(Color::Cyan),
         }
     }
 
-    fn draw(&self, term: &Term) {
+    fn draw(&self, term: &mut Stdout) {
         for snake_chain in &self.body {
-            term.move_cursor_to(snake_chain.x as usize, snake_chain.y as usize)
-                .unwrap();
+            term.queue(cursor::MoveTo(snake_chain.x as u16, snake_chain.y as u16));
             print!("{}", self.chain_symbol);
         }
-        io::stdout().flush().unwrap();
+        term.flush();
+
     }
 
-    fn cut_tail(&mut self, term: &Term, hide: &console::StyledObject<char>) {
+    fn cut_tail(&mut self, term: &mut Stdout, hide: &StyledContent<char>) {
         let tail = self.body.pop_back().unwrap();
-        term.move_cursor_to(tail.x as usize, tail.y as usize)
-            .unwrap();
+        term.queue(cursor::MoveTo(tail.x as u16, tail.y as u16));
         print!("{}", hide);
-        io::stdout().flush().unwrap();
+        term.flush();
+
     }
 
-    fn add_head(&mut self, term: &Term) {
+    fn add_head(&mut self, term: &mut Stdout) {
         let mut head = self.body[0].clone();
         match *self.move_direction.lock().unwrap() {
             Direction::Left => {
-                head.x = head.x - 1;
+                head.x -= 1;
             }
             Direction::Right => {
-                head.x = head.x + 1;
+                head.x += 1;
             }
-            Direction::Top => {
-                head.y = head.y - 1;
+            Direction::Up => {
+                head.y -= 1;
             }
             Direction::Down => {
-                head.y = head.y + 1;
+                head.y += 1;
             }
         }
-        term.move_cursor_to(head.x as usize, head.y as usize)
-            .unwrap();
+        term.queue(cursor::MoveTo(head.x as u16, head.y as u16));
         print!("{}", self.chain_symbol);
-        io::stdout().flush().unwrap();
+        term.flush();
         self.body.push_front(head);
     }
 
-    fn _move(&mut self, term: &Term, hide: &console::StyledObject<char>, act: MoveAct) {
+    fn _move(&mut self, mut term: &mut Stdout, hide: &StyledContent<char>, act: MoveAct) {
         if let MoveAct::Move = act {
-            self.cut_tail(term, hide);
+            self.cut_tail(&mut term, hide);
         }
-        self.add_head(term);
+        self.add_head(&mut term);
     }
 }
 
@@ -243,42 +264,43 @@ impl SnakeGame {
         let snake = Snake::new(
             0,          // tail pos x
             height / 2, // tail pos y
-            70,          // len
+            7,          // len
             Direction::Right,
         );
 
         let cookies = Cookies::new(
-            0.1, //cookies fill percent of free space
+            0.3, //cookies fill percent of free space
             width, height, &snake,
         );
 
+        let term = stdout();
+        
         SnakeGame {
             width,
             height,
             speed_msec,
-            term: Term::stdout(),
+            term,
             snake,
             cookies,
             playground_symbol: '.',
-            playground_color: Style::new().white(),
+            playground_color: ContentStyle::new(),
         }
     }
 
     fn start_key_press_handler(&self) {
-        let rt = self.term.clone();
+        let mut rt = input().read_sync();
         let dr = self.snake.move_direction.clone();
         thread::spawn(move || loop {
-            match rt.read_key() {
-                Ok(r) => match r {
-                    console::Key::ArrowLeft => {
+            if let Some(r) = rt.next() {
+                match r {
+                    InputEvent::Keyboard(KeyEvent::Left) => {
                         dr.lock().unwrap().turn_left();
                     }
-                    console::Key::ArrowRight => {
+                    InputEvent::Keyboard(KeyEvent::Right) => {
                         dr.lock().unwrap().turn_right();
                     }
                     _ => {}
-                },
-                _ => {}
+                }
             }
         });
     }
@@ -294,7 +316,7 @@ impl SnakeGame {
         }
     }
 
-    fn sneak_meet_barrier(&mut self) -> bool {
+    fn snake_meet_barrier(&mut self) -> bool {
         let head = self.snake.body.pop_front().unwrap();
         let mut ret = false;
         if head.x > self.width - 1 || head.x < 0 {
@@ -307,14 +329,17 @@ impl SnakeGame {
         if self.snake.body.contains(&head) {
             ret = true;
         }
-        
+
         self.snake.body.push_front(head);
         return ret;
     }
 
-    fn sneak_meet_cookie(&self) -> Option<Cookie> {
+    fn snake_meet_cookie(&self) -> Option<Cookie> {
         let head = self.snake.body[0].clone();
-        let cookie = Cookie{ x: head.x, y: head.y};
+        let cookie = Cookie {
+            x: head.x,
+            y: head.y,
+        };
         if self.cookies.cookies.contains(&cookie) {
             return Some(cookie);
         }
@@ -323,37 +348,41 @@ impl SnakeGame {
 
     fn play(&mut self) {
         self.draw_playground();
-        self.snake.draw(&self.term);
-        self.cookies.draw(&self.term);
+        self.snake.draw(&mut self.term);
+        self.cookies.draw(&mut self.term);
 
         self.start_key_press_handler();
 
-        let hide = self.playground_color.apply_to(self.playground_symbol);
+        let hide = self.playground_color.apply(self.playground_symbol);
         let mut act = MoveAct::Move;
         loop {
-            self.snake._move(&self.term, &hide, act);
+            self.snake._move(&mut self.term, &hide, act);
             act = MoveAct::Move;
-            if self.sneak_meet_barrier() {
+            if self.snake_meet_barrier() {
                 break;
-            } 
-            
-            if let Some(cookie) = self.sneak_meet_cookie() {
+            }
+            if let Some(cookie) = self.snake_meet_cookie() {
                 act = MoveAct::Grow;
                 self.cookies.remove(cookie);
-                self.cookies.add(&self.term, self.width, self.height, &self.snake);
+                self.cookies
+                    .add(&mut self.term, self.width, self.height, &self.snake);
             }
             thread::sleep(Duration::from_millis(self.speed_msec));
         }
     }
 
-    fn draw_playground(&self) {
-        self.term.clear_screen().unwrap();
+    fn draw_playground(&mut self) {        
+        self.term.queue(Clear(ClearType::All));
+        self.term.queue(cursor::MoveTo(0, 0));
+        self.term.queue(cursor::Hide);
+        self.term.flush();
         let r = self
             .playground_symbol
             .to_string()
             .repeat(self.width as usize);
         for _ in 0..self.height {
-            println!("{}", self.playground_color.apply_to(&r));
+            println!("{}", self.playground_color.apply(&r));
+            self.term.flush();
         }
     }
 }
