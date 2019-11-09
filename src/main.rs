@@ -282,6 +282,8 @@ impl SnakeGame {
                             dr.lock().unwrap().turn_right();
                         }
                         InputEvent::Keyboard(KeyEvent::Esc) => {
+			    RawScreen::disable_raw_mode().unwrap();
+		            term.queue(Clear(ClearType::All)).unwrap();                            
                             term.queue(cursor::Show).unwrap();
                             term.flush().unwrap();
                             process::exit(0);
@@ -357,7 +359,9 @@ impl SnakeGame {
             }
             thread::sleep(Duration::from_millis(self.speed_msec));
         }
+	RawScreen::disable_raw_mode().unwrap();
         self.term.queue(cursor::Show).unwrap();
+        self.term.queue(Clear(ClearType::All)).unwrap();
         self.term.flush().unwrap();
     }
 
