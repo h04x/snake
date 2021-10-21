@@ -351,7 +351,9 @@ impl SnakeGame {
             }
             thread::sleep(Duration::from_millis(self.speed_msec));
         }
+	//RawScreen::disable_raw_mode().unwrap();
         self.term.queue(cursor::Show).unwrap();
+        self.term.queue(Clear(ClearType::All)).unwrap();
         self.term.flush().unwrap();
     }
 
