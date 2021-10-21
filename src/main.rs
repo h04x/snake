@@ -1,7 +1,9 @@
+use crossterm::event::KeyCode;
+use crossterm::style::Stylize;
 use crossterm::{
     cursor,
-    input::{input, InputEvent, KeyEvent},
-    screen::RawScreen,
+    event::{read, Event},
+    //screen::RawScreen,
     style::{style, Color, ContentStyle, StyledContent},
     terminal::{Clear, ClearType},
     QueueableCommand,
@@ -91,8 +93,8 @@ impl Cookies {
         let mut r = rand::thread_rng();
         for _ in 0..cookies_cnt as usize {
             loop {
-                let x = r.gen_range(0, width);
-                let y = r.gen_range(0, height);
+                let x = r.gen_range(0..width);
+                let y = r.gen_range(0..height);
                 let c = Cookie { x, y };
                 let s = SnakeChain { x, y };
                 if !snake.body.contains(&s) && !cookies.contains(&c) {
@@ -135,8 +137,8 @@ impl Cookies {
 
         let mut r = rand::thread_rng();
         loop {
-            let x = r.gen_range(0, width);
-            let y = r.gen_range(0, height);
+            let x = r.gen_range(0..width);
+            let y = r.gen_range(0..height);
             let c = Cookie { x, y };
             let s = SnakeChain { x, y };
             if !snake.body.contains(&s) && !self.cookies.contains(&c) {
@@ -184,7 +186,7 @@ impl Snake {
         Snake {
             move_direction,
             body,
-            chain_symbol: style('o').with(Color::Cyan),
+            chain_symbol: style('o').cyan(),
         }
     }
 
@@ -267,26 +269,22 @@ impl SnakeGame {
     }
 
     fn start_key_press_handler(&self) {
-        let mut rt = input().read_sync();
+        //let mut rt = input().read_sync();
         let mut term = stdout();
         let dr = self.snake.move_direction.clone();
         thread::spawn(move || {
-            let _raw = RawScreen::into_raw_mode();
+            //let _raw = RawScreen::into_raw_mode();
             loop {
-                if let Some(r) = rt.next() {
-                    match r {
-                        InputEvent::Keyboard(KeyEvent::Left) => {
-                            dr.lock().unwrap().turn_left();
-                        }
-                        InputEvent::Keyboard(KeyEvent::Right) => {
-                            dr.lock().unwrap().turn_right();
-                        }
-                        InputEvent::Keyboard(KeyEvent::Esc) => {
+                if let Event::Key(event) = read().unwrap() {
+                    match event.code {
+                        KeyCode::Left => dr.lock().unwrap().turn_left(),
+                        KeyCode::Right => dr.lock().unwrap().turn_right(),
+                        KeyCode::Esc => {
                             term.queue(cursor::Show).unwrap();
                             term.flush().unwrap();
                             process::exit(0);
                         }
-                        _ => {}
+                        _ => (),
                     }
                 }
             }
@@ -295,8 +293,8 @@ impl SnakeGame {
 
     #[allow(dead_code)]
     fn crazy_ivan(&self) {
-        if rand::thread_rng().gen_range(0.0, 1.0) < 0.1 {
-            if rand::thread_rng().gen_range(0, 2) == 1 {
+        if rand::thread_rng().gen_range(0..100) < 1 {
+            if rand::thread_rng().gen_range(0..3) == 1 {
                 self.snake.move_direction.lock().unwrap().turn_left();
             } else {
                 self.snake.move_direction.lock().unwrap().turn_right();
@@ -313,11 +311,9 @@ impl SnakeGame {
         if head.y > self.height - 1 || head.y < 0 {
             ret = true;
         }
-
         if self.snake.body.contains(&head) {
             ret = true;
         }
-
         self.snake.body.push_front(head);
         ret
     }
@@ -338,9 +334,7 @@ impl SnakeGame {
         self.draw_playground();
         self.snake.draw(&mut self.term);
         self.cookies.draw(&mut self.term);
-
         self.start_key_press_handler();
-
         let hide = self.playground_color.apply(self.playground_symbol);
         let mut act = MoveAct::Move;
         loop {
